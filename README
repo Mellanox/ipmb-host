@@ -1,0 +1,236 @@
+============
+IPMB Drivers
+============
+
+The Intelligent Platform Management Bus or IPMB, is an
+I2C bus that provides a standardized interconnection between
+different boards within a chassis. This interconnection is
+between the baseboard management (BMC) and chassis electronics.
+IPMB is also associated with the messaging protocol through the
+IPMB bus.
+
+The devices using the IPMB are usually management
+controllers that perform management functions such as servicing
+the front panel interface, monitoring the baseboard,
+hot-swapping disk drivers in the system chassis, etc...
+
+When an IPMB is implemented in the system, the BMC serves as
+a controller to give system software access to the IPMB. The BMC
+sends IPMI requests to a device (usually a Satellite Management
+Controller or Satellite MC) via IPMB and the device
+sends a response back to the BMC.
+
+For more information on IPMB and the format of an IPMB message,
+refer to the IPMB and IPMI specifications.
+
+2 IPMB modes in BlueField systems
+---------------------------------
+
+There is support for 2 IPMB transaction modes:
+
+1) IPMB requests from the BMC to the BlueField.
+
+   In this mode, the ipmb_dev_int driver needs to be loaded on the
+   BlueField.
+   The BMC can then send IPMI requests to the BlueField.
+
+2) IPMB requests from the BlueField to the BMC.
+
+   This mode can be enabled via the load_bf2bmc_ipmb.sh script.
+   In this mode, the ipmb_host driver needs to be loaded on the
+   BlueField. The ipmb_host driver executes a handshake with the
+   BMC to be able to load.
+
+At the moment, these 2 modes cannot coexist, so there are 2 scripts
+included in this github folder to switch from one mode to another:
+
+1) load_bf2bmc_ipmb.sh - enables sending IPMI requests from the BlueField
+   to the BMC
+
+2) load_bmc2bf_ipmb.sh - enables sending IPMI requests from the BMC to the
+   BlueField.
+
+For further information on how to run these scripts, read sections below.
+
+
+Description of the IPMB drivers
+-------------------------------
+
+The following drivers can be used on CentOS supporting 4.14 linux version.
+
+ipmb_dev_int -	This is the driver needed to receive IPMB messages
+		from a BMC and to send a response back.
+		This driver works with the I2C driver and OpenIPMI program:
+
+		1) It is an I2C slave backend driver. So, it defines a callback
+       		   function to set the BlueField as an I2C slave.
+		   This callback function handles the received IPMI requests.
+
+		2) It defines the read and write functions to enable OpenIPMI
+		   to communicate with the kernel.
+
+ipmb_host -	This is the driver needed on the BlueField to send IPMB
+		messages to the BMC on the IPMB bus. This driver
+		works with the I2C driver and will load successfully only
+		if it executes a successful handshake with the BMC.
+
+
+Loading and using IPMI on BlueField running CentOS
+--------------------------------------------------
+
+Part 1: Enable IPMI requets from the BMC to the BlueField
+        This part has to be executed before Part 2.
+
+1) Load the BlueField CentOS image.
+
+   The following steps are performed from the BlueField CentOS prompt.
+   The BlueField is running CentOS 7.5 with kernel 4.14. The CentOS
+   installation was using the CentOS everything iso image.
+
+   The follwoing drivers need to be loaded on the BlueField running
+   CentOS:
+   - jc42.ko
+   - ee1004.ko
+   - at24.ko
+   - eeprom.ko
+   - i2c-dev.ko
+
+   # modprobe eeprom
+   # modprobe i2c-dev
+
+2) Example of building and loading jc42, at24 and ee1004:
+
+   Example of building and loading jc42.ko:
+
+   # compile jc42.c
+   # mkdir -p /root/drivers/hwmon
+   # wget -O /root/drivers/hwmon/jc42.c https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/plain/drivers/hwmon/jc42.c?h=linux-4.14.y
+   # echo "obj-m := jc42.o" > /root/drivers/hwmon/Kbuild
+   # make -C /usr/src/kernels/4.14.0-49.el7a.aarch64 M=/root/drivers/hwmon modules
+   # ls -l root/drivers/hwmon/jc42.ko
+   # make -C /usr/src/kernels/4.14.0-49.el7a.aarch64 M=/root/drivers/hwmon modules_install
+   # modprobe jc42
+
+   Example of building and loading ee1004.ko and at24.ko:
+
+   # compile ee1004.c and at24.c
+   # mkdir -p /root/drivers/misc/eeprom
+   # wget -O /root/drivers/misc/eeprom/ee1004.c https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/plain/drivers/misc/eeprom/ee1004.c?h=linux-4.20.y
+   # wget -O /root/drivers/misc/eeprom/at24.c https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/plain/drivers/misc/eeprom/at24.c?h=linux-4.14.y
+   # make -C /usr/src/kernels/4.14.0-49.el7a.aarch64 M=/root/drivers/misc/eeprom modules
+   # ls -l root/drivers/misc/eeprom/eeprom.ko
+   # ls -l root/drivers/misc/eeprom/at24.ko
+   # make -C /usr/src/kernels/4.14.0-49.el7a.aarch64 M=/root/drivers/misc/eeprom modules_install
+   # modprobe ee1004
+   # modprobe at24
+
+3) Optional: Update the i2c-mlx driver if the installed version is older than version
+   i2c-mlx-1.0-0.gab579c6.src.rpm
+
+   a. Re-compiler i2c-mlx. Run:
+	# yum remove -y kmod-i2c-mlx
+	# modprobe -rv i2c-mlx
+
+   b. Transfer the i2c-mlx RPM from the BlueField software tarball under distro/SRPM onto the ARM. Run:
+	# rpmbuild --rebuild /root/i2c-mlx-1.0=0.gab579.src.rpm
+	# yum install -y /root/rpmbuild/RPMS/aarch64/i2c-mlx-1.0-0.gab579c6_4.14.0_49.el7a.aarch64.aarch64.rpm
+	# ls -l /lib/modules/4.14.0_49.el7a.aarch64/extra/i2c-mlx/i2c-mlx.ko
+
+   c. modprobe i2c-mlx
+
+4) Install the following packages:
+
+   yum install ipmitool lm_sensors libtool rpm-devel rpmdevtools rpmlint wget ncurses-devel automake
+
+5) Generate an RPM binary from the BlueField mlx-OpenIPMI-2.0.24 source RPM
+
+   rpmbuild --rebuild mlx-OpenIPMI-2.0.24-0.g26410e6.src.rpm
+
+   If there are issues building the OpenIPMI RPM, verify that the swig package is not installed.
+
+   yum remove -y swig
+
+6) Generate a binary RPM from the ipmb-dev-int source RPM. Run:
+
+   rpmbuild --rebuild ipmb-dev-int-1.0-0.g12ef22a.src.rpm
+
+7) Load OpenIPMI and ipmb-dev-int RPM packages. Run:
+
+   yum install -y /root/rpmbuild/RPMS/aarch64/mlx-OpenIPMI-2.0.24-0.g26410e6_4.14.0_49.el7a.aarch64.aarch64.rpm
+
+   yum install -y /root/rpmbuild/RPMS/aarch64/ipmb-dev-int-1.0-0.g12ef22a_4.14.0_49.el7a.aarch64.aarch64.rpm
+
+8) modprobe ipmb_dev_int
+
+   Note: 
+   The slave address at which the ipmb_dev_int driver is registered
+   can be changed in the /usr/bin/set_emu_param.sh script.
+   By default, the 7 bit slave address is set to 0x11 as follows:
+
+   echo ipmb-dev 0x1011 > /sys/bus/i2c/devices/i2c-2/new_device
+
+   To change the slave address to some other value, just change the
+   BF_I2C_ADDR variable in the set_emu_param.sh script. This has to
+   be done before starting the mlx_ipmid daemon as shown in step 9).
+
+9) systemctl start mlx_ipmid
+
+10) test if the IPMI daemon responds on the BlueField. Foe example, run:
+
+    ipmitool -U ADMIN -P ADMIN -p 9001 -H localhost mc info
+
+
+Part 2: Enable IPMI requests from the BlueField to the BMC
+
+11) If the ipmi_devintf driver and ipmi_msghandler driver are
+    already loaded, unload them as follows:
+
+    rmmod ipmi_devintf
+    rmmod ipmi_msghandler
+
+    If the ipmi_devintf.ko and ipmi_msghandler.ko modules are not
+    present under /lib/modules/$(uname -r)/kernel/drivers/char/ipmi,
+    build and load those drivers.
+
+12) copy the whole ipmb-host github directory to the following location on
+    the BlueField: /tmp/ipmb-host
+
+13) Build the ipmb-host.ko as follows:
+
+    cd /tmp/ipmb-host
+    ./build
+
+14) To switch to the IPMI mode where the BlueField sends IPMI requests to the BMC,
+    run the following script:
+
+    /tmp/ipmb-host/load_bf2bmc_ipmb_centos.sh
+
+    Notes:
+
+    a) This script cannot work if Part 1 of this README was not achieved.
+
+    b) If step 8) made changes to the ipmb_dev_int i2c address, change IPMB_DEV_INT_ADD
+    variable in load_bf2bmc_ipmb_centos.sh to match the i2c address used in step 8).
+
+    c) The load_bf2bmc_ipmb.sh script registers the ipmb_host device at
+    i2c address 0x30 as follows:
+    echo ipmb-host 0x1030 > /sys/bus/i2c/devices/i2c-2/new_device
+
+    The load_bf2bmc_ipmb.sh script also sets the BMC i2c address to
+    SLAVE_ADD=0x10
+
+    To change the slave address of the BMC, modify the SLAVE_ADD
+    variable in the load_bf2bmc_ipmb.sh script.
+
+    To change the BlueField i2c address of the BlueField, modify the
+    IPMB_HOST_ADD variable in the load_bf2bmc_ipmb.sh script.
+
+15) To switch back to the IPMI mode where the BMC sends IPMI requests to the BlueField,
+    run the following script:
+
+    ./tmp/ipmb-host/load_bmc2bf_ipmb.sh
+
+    Notes:
+
+    If step 14) made changes to the ipmb_host i2c address, the IPMB_HOST_ADD
+    variable needs to be changed in load_bmc2bf_ipmb.sh 

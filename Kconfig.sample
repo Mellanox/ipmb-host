@@ -1,0 +1,5 @@
+config IPMB_HOST
+        tristate "IPMB host driver"
+	depends on I2C_SLAVE
+        help
+	  This enables the IPMB HOST driver.
